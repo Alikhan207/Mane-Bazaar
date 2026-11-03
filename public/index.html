@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Mane Bazaar</title>
+<style>
+body{font-family:system-ui,sans-serif;margin:0;background:#faf6f0;color:#2b2118}
+header{padding:20px 24px;border-bottom:1px solid #e6dccd}
+h1{margin:0;font-size:22px}header p{margin:4px 0 0;color:#7a6a58;font-size:14px}
+main{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px;padding:20px 24px}
+.card{background:#fff;border:1px solid #e6dccd;border-radius:12px;padding:16px}
+.top{display:flex;gap:12px;align-items:center}
+.av{width:56px;height:56px;border-radius:50%;background:#e8d9c3;object-fit:cover;display:grid;place-items:center;font-weight:600;color:#7a5a2e}
+.name{font-weight:600}.sub{color:#7a6a58;font-size:13px}
+ul{list-style:none;padding:0;margin:12px 0 0}
+li{display:flex;justify-content:space-between;gap:8px;padding:6px 0;border-top:1px solid #f0e8da;font-size:14px}
+.empty{color:#9a8a76;font-size:13px;margin-top:12px}
+</style></head><body>
+<header><h1>Mane Bazaar</h1><p>Live from the chat bot. Updates every few seconds.</p></header>
+<main id="m"></main>
+<script>
+const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+async function load(){
+  try{
+    const sellers=await (await fetch("/api/sellers")).json();
+    document.getElementById("m").innerHTML=sellers.map(s=>{
+      const av=s.photo?`<img class="av" src="${esc(s.photo)}" alt="">`:`<div class="av">${esc((s.name||"?")[0])}</div>`;
+      const items=s.items.length?`<ul>${s.items.map(i=>`<li><span>${esc(i.name)}</span><span>₹${esc(i.price)}${i.unit?" / "+esc(i.unit):""}</span></li>`).join("")}</ul>`:`<div class="empty">No items listed today</div>`;
+      return `<div class="card"><div class="top">${av}<div><div class="name">${esc(s.name||"New seller")}</div><div class="sub">${esc(s.business_name||"")} ${esc(s.area||"")}</div></div></div>${items}</div>`;
+    }).join("")||'<p class="empty">No sellers yet. Send "hi" to the bot.</p>';
+  }catch(e){}
+}
+load();setInterval(load,3000);
+</script></body></html>
