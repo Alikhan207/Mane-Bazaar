@@ -1,0 +1,304 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>My shop — Mane Bazaar</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Noto+Sans+Kannada:wght@400;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/app.css">
+</head><body>
+<div class="shell">
+  <aside class="sidebar">
+    <div class="brand"><span class="brandmark" id="logo"></span>Mane Bazaar</div>
+    <p class="brand-sub" id="place">KARNATAKA</p>
+    <nav class="nav" id="nav"></nav>
+    <div class="sidebar-bottom">
+      <div class="help-card"><strong id="helpTitle">A little help?</strong><p id="helpText"></p></div>
+      <div class="profile"><span class="avatar" id="av">?</span><div><strong id="pname">—</strong><small id="prole"></small></div></div>
+    </div>
+  </aside>
+  <div class="main">
+    <div class="topbar">
+      <div class="crumb">Mane Bazaar<strong id="crumb">My home</strong></div>
+      <div class="lang" id="lang"></div>
+    </div>
+    <div class="content" id="content"><p class="empty">Loading…</p></div>
+  </div>
+</div>
+<div id="toast" role="status"></div>
+<dialog id="modal"></dialog>
+<script>
+const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const label=s=>String(s??"").replace(/_/g," ").replace(/\b\w/g,c=>c.toUpperCase());
+const KN={home_seller:"ಮನೆ ಮಾರಾಟಗಾರರು",farmer:"ರೈತರು",pickup_only:"ಬಂದು ಪಡೆಯುವುದು",within_hubli:"ಹುಬ್ಬಳ್ಳಿಯೊಳಗೆ",across_karnataka:"ಕರ್ನಾಟಕದಾದ್ಯಂತ",
+ homemade_food:"ಮನೆಯ ಆಹಾರ",pickles_masala:"ಉಪ್ಪಿನಕಾಯಿ ಮಸಾಲೆ",snacks_sweets:"ತಿಂಡಿ ಸಿಹಿ",cloth_tailoring:"ಬಟ್ಟೆ ಹೊಲಿಗೆ",crafts:"ಕರಕುಶಲ",farm_produce:"ಕೃಷಿ ಉತ್ಪನ್ನ",other:"ಇತರೆ",
+ new:"ಹೊಸ",accepted:"ತಯಾರಿ",ready:"ಸಿದ್ಧ",completed:"ಪೂರ್ಣ",declined:"ನಿರಾಕರಿಸಲಾಗಿದೆ"};
+const term=v=>(lang==="kn"&&KN[v])?KN[v]:label(v);
+const money=n=>"₹"+Number(n||0).toLocaleString("en-IN");
+const S=new URLSearchParams(location.search).get("s")||"";
+let lang=localStorage.getItem("mb_lang")||"en",view=location.hash.slice(1)||"home",data=null,briefText="",filter="all";
+
+const P={home:'M3 10l9-7 9 7v10H3Z M9 20v-7h6v7',bag:'M5 7h14l1 14H4Z M8 8V6a4 4 0 0 1 8 0v2',
+ box:'M3 7l9-4 9 4v10l-9 4-9-4Z M3 7l9 5 9-5 M12 12v9',wallet:'M3 5h17v15H3Z M16 10h5v6h-5Z M5 5V3h12',
+ chart:'M4 20V10 M10 20V4 M16 20v-8 M22 20H2',mic:'M9 5a3 3 0 0 1 6 0v7a3 3 0 0 1-6 0Z M6 10v2a6 6 0 0 0 12 0v-2 M12 18v4 M9 22h6',
+ clock:'M12 8v5l3 2 M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0',check:'M5 12l4 4L19 6',
+ close:'M6 6l12 12 M6 18L18 6',plus:'M12 5v14 M5 12h14',leaf:'M20 4C9 3 3 9 5 15c6 2 13-2 15-11Z M5 20c2-4 5-6 9-8',
+ house:'M3.5 10.5 12 3.5l8.5 7v9.5h-17Z M9.5 20.5v-6h5v6',download:'M12 3v12 M7 10l5 5 5-5 M4 17v4h16v-4'};
+const icon=k=>`<svg class="icon" viewBox="0 0 24 24" aria-hidden="true">${P[k].split(" M").map((d,i)=>`<path d="${i?"M"+d:d}"/>`).join("")}</svg>`;
+document.getElementById("logo").innerHTML=`<svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+  <path d="M3.5 10.5 12 3.5l8.5 7v9.5h-17Z"/><path d="M9.5 20.5v-6h5v6"/>
+  <path d="M15.5 8.2c1.6-.2 2.6-1.3 3-2.7-1.6.2-2.7 1.1-3 2.7Z" fill="currentColor" stroke="none"/></svg>`;
+
+const L={en:{home:"My home",orders:"My orders",products:"My products",money:"My money",story:"My business story",
+ heroEye:"YOUR SHOP. YOUR WAY.",heroH:"What are you selling today?",heroP:"Add items by speaking in Kannada or sending a photo to the bot. Your public page updates at once.",
+ brief:"Today's brief",pending:"Orders to prepare",received:"Received",due:"Awaiting payment",listed:"Items listed today",
+ todays:"Today's items",recent:"A little work for today",all:"All orders",none:"Nothing here yet.",caught:"You're all caught up.",
+ doWhat:"What would you like to do?",speak:"Speak to add",seeOrders:"See my orders",pause:"Pause shop",reopen:"Open shop",checkMoney:"Check my money",
+ edit:"Edit",editItem:"Edit item",name:"Item name",price:"Price (₹)",unit:"Pack size",qty:"How many available",
+ save:"Save item",cancel:"Cancel",remove:"Remove",saved:"Saved.",removed:"Item removed.",
+ accept:"Accept",decline:"Decline",markReady:"Mark ready",handed:"Mark handed over",recordPaid:"Record payment received",
+ avail:"Available",left:"left",pack:"pack",
+ book:"Payment book",storySub:"Every small order is a step forward.",sales:"Recorded daily sales",
+ passport:"BUSINESS RECORD",done:"Completed orders",buyers:"Buyers",days:"Active days",
+ pub:"Public page",open:"Shop is open",closed:"Shop is paused",
+ pausedMsg:"New orders paused. Existing orders are unchanged.",openMsg:"Your shop is open again.",
+ tipH:"Keep it simple",tipP:"Say what you have today, confirm the read-back, and your page is live. No forms, no typing in English.",
+ disc:"A record of activity on Mane Bazaar. It is not a credit score and not a promise of a loan.",
+ payNote:"\u201cPaid\u201d means you confirmed it. No payment here is bank-verified.",
+ help:"A little help?",helpP:"You can do everything here, or just message the bot in Kannada.",
+ buyer:"Buyer",item:"Item",qtyS:"Qty",total:"Total",status:"Status",paid:"Paid",yes:"Yes",no:"Not yet",
+ fNew:"New",fPrep:"Preparing",fReady:"Ready",fDone:"Completed",madeIn:"Made with love, in",neighbourhood:"Your neighbourhood favourites",namaskara:"Namaskara",seller:"Home seller",farmer:"Farmer"},
+ kn:{home:"ನನ್ನ ಮನೆ",orders:"ನನ್ನ ಆರ್ಡರ್",products:"ನನ್ನ ಉತ್ಪನ್ನ",money:"ನನ್ನ ಹಣ",story:"ನನ್ನ ವ್ಯಾಪಾರದ ಕಥೆ",
+ heroEye:"ನಿಮ್ಮ ಅಂಗಡಿ. ನಿಮ್ಮ ಆಯ್ಕೆ.",heroH:"ಇಂದು ಏನು ಮಾರಾಟ ಮಾಡುತ್ತೀರಿ?",heroP:"ಕನ್ನಡದಲ್ಲಿ ಮಾತನಾಡಿ ಅಥವಾ ಬಾಟ್‌ಗೆ ಫೋಟೋ ಕಳುಹಿಸಿ ಸೇರಿಸಿ. ನಿಮ್ಮ ಪುಟ ತಕ್ಷಣ ನವೀಕರಣವಾಗುತ್ತದೆ.",
+ brief:"ಇಂದಿನ ಸಾರಾಂಶ",pending:"ತಯಾರಿಸಬೇಕಾದ ಆರ್ಡರ್",received:"ಬಂದ ಹಣ",due:"ಬಾಕಿ ಹಣ",listed:"ಇಂದಿನ ಉತ್ಪನ್ನಗಳು",
+ todays:"ಇಂದಿನ ಉತ್ಪನ್ನಗಳು",recent:"ಇಂದಿನ ಕೆಲಸಗಳು",all:"ಎಲ್ಲಾ ಆರ್ಡರ್",none:"ಇಲ್ಲಿ ಇನ್ನೂ ಏನೂ ಇಲ್ಲ.",caught:"ಎಲ್ಲಾ ಕೆಲಸ ಮುಗಿದಿದೆ.",
+ doWhat:"ನೀವು ಏನು ಮಾಡಲು ಬಯಸುತ್ತೀರಿ?",speak:"ಮಾತನಾಡಿ ಸೇರಿಸಿ",seeOrders:"ಆರ್ಡರ್ ನೋಡಿ",pause:"ಅಂಗಡಿ ನಿಲ್ಲಿಸಿ",reopen:"ಅಂಗಡಿ ತೆರೆಯಿರಿ",checkMoney:"ಹಣ ನೋಡಿ",
+ edit:"ಬದಲಿಸಿ",editItem:"ಉತ್ಪನ್ನ ಬದಲಿಸಿ",name:"ಉತ್ಪನ್ನದ ಹೆಸರು",price:"ಬೆಲೆ (₹)",unit:"ಪ್ಯಾಕ್ ಅಳತೆ",qty:"ಎಷ್ಟು ಲಭ್ಯ",
+ save:"ಉಳಿಸಿ",cancel:"ರದ್ದು",remove:"ತೆಗೆದುಹಾಕಿ",saved:"ಉಳಿಸಲಾಗಿದೆ.",removed:"ತೆಗೆದುಹಾಕಲಾಗಿದೆ.",
+ accept:"ಸ್ವೀಕರಿಸಿ",decline:"ನಿರಾಕರಿಸಿ",markReady:"ಸಿದ್ಧವಾಗಿದೆ",handed:"ಹಸ್ತಾಂತರಿಸಲಾಗಿದೆ",recordPaid:"ಹಣ ಬಂದಿದೆ ಎಂದು ದಾಖಲಿಸಿ",
+ avail:"ಲಭ್ಯ",left:"ಉಳಿದಿದೆ",pack:"ಪ್ಯಾಕ್",
+ book:"ಪಾವತಿ ಪುಸ್ತಕ",storySub:"ಪ್ರತಿ ಆರ್ಡರ್ ಒಂದು ಮುಂದಿನ ಹೆಜ್ಜೆ.",sales:"ದಾಖಲಾದ ದಿನದ ಮಾರಾಟ",
+ passport:"ವ್ಯಾಪಾರದ ದಾಖಲೆ",done:"ಪೂರ್ಣಗೊಂಡ ಆರ್ಡರ್",buyers:"ಗ್ರಾಹಕರು",days:"ಸಕ್ರಿಯ ದಿನಗಳು",
+ pub:"ಸಾರ್ವಜನಿಕ ಪುಟ",open:"ಅಂಗಡಿ ತೆರೆದಿದೆ",closed:"ಅಂಗಡಿ ನಿಲ್ಲಿಸಲಾಗಿದೆ",
+ pausedMsg:"ಹೊಸ ಆರ್ಡರ್ ನಿಲ್ಲಿಸಲಾಗಿದೆ. ಹಿಂದಿನ ಆರ್ಡರ್‌ಗಳು ಹಾಗೆಯೇ ಇವೆ.",openMsg:"ನಿಮ್ಮ ಅಂಗಡಿ ಮತ್ತೆ ತೆರೆದಿದೆ.",
+ tipH:"ಸರಳವಾಗಿರಲಿ",tipP:"ಇಂದು ಏನಿದೆ ಎಂದು ಹೇಳಿ, ದೃಢಪಡಿಸಿ, ನಿಮ್ಮ ಪುಟ ಸಿದ್ಧ. ಫಾರ್ಮ್ ಇಲ್ಲ, ಇಂಗ್ಲಿಷ್ ಟೈಪಿಂಗ್ ಇಲ್ಲ.",
+ disc:"ಮನೆ ಬಜಾರ್‌ನ ಚಟುವಟಿಕೆಯ ದಾಖಲೆ. ಕ್ರೆಡಿಟ್ ಸ್ಕೋರ್ ಅಥವಾ ಸಾಲದ ಭರವಸೆ ಅಲ್ಲ.",
+ payNote:"\u201cಪಾವತಿ\u201d ಎಂದರೆ ನೀವು ದೃಢಪಡಿಸಿದ್ದೀರಿ. ಬ್ಯಾಂಕ್ ಪರಿಶೀಲನೆ ಅಲ್ಲ.",
+ help:"ಸ್ವಲ್ಪ ಸಹಾಯ?",helpP:"ಇಲ್ಲಿ ಎಲ್ಲವನ್ನೂ ಮಾಡಬಹುದು, ಅಥವಾ ಕನ್ನಡದಲ್ಲಿ ಬಾಟ್‌ಗೆ ಸಂದೇಶ ಕಳುಹಿಸಿ.",
+ buyer:"ಗ್ರಾಹಕ",item:"ಉತ್ಪನ್ನ",qtyS:"ಪ್ರಮಾಣ",total:"ಒಟ್ಟು",status:"ಸ್ಥಿತಿ",paid:"ಪಾವತಿ",yes:"ಹೌದು",no:"ಇನ್ನೂ ಇಲ್ಲ",
+ fNew:"ಹೊಸ",fPrep:"ತಯಾರಿ",fReady:"ಸಿದ್ಧ",fDone:"ಪೂರ್ಣ",madeIn:"ಪ್ರೀತಿಯಿಂದ ತಯಾರಿಸಿದ್ದು,",neighbourhood:"ನಿಮ್ಮ ನೆಚ್ಚಿನ ಸ್ಥಳೀಯ ಉತ್ಪನ್ನಗಳು",namaskara:"ನಮಸ್ಕಾರ",seller:"ಮನೆ ಮಾರಾಟಗಾರರು",farmer:"ರೈತರು"}};
+const t=k=>(L[lang]||L.en)[k]||L.en[k];
+
+function toast(msg){const el=document.getElementById("toast");el.textContent=msg;el.classList.add("show");
+  clearTimeout(el._t);el._t=setTimeout(()=>el.classList.remove("show"),2600)}
+async function post(path,body){
+  const r=await fetch(path+(path.includes("?")?"&":"?")+"s="+encodeURIComponent(S),
+    {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body||{})});
+  if(!r.ok)throw new Error("failed");
+  return r.json();
+}
+// price line: "₹50 / 150 g pack · 10 left"
+function itemMeta(i){
+  const bits=[];
+  bits.push(money(i.price)+(i.unit?" / "+esc(i.unit):""));
+  if(i.qty)bits.push(`${esc(i.qty)} ${esc(t("left"))}`);
+  return bits.join(" · ");
+}
+
+async function toggleShop(){
+  try{const r=await post("/api/shop/open",{open:!data.shop.open});
+    data.shop.open=r.open;toast(r.open?t("openMsg"):t("pausedMsg"));paint()}
+  catch(e){toast("Could not change that.")}
+}
+async function orderAction(id,status){
+  try{await post("/api/orders/"+id,{status});toast(t("saved"));await load()}catch(e){toast("Could not change that.")}
+}
+async function markPaid(id){
+  try{await post("/api/orders/"+id,{paid:true});toast(t("saved"));await load()}catch(e){toast("Could not change that.")}
+}
+function editItem(id){
+  const i=data.items.find(x=>x.id===id);if(!i)return;
+  const m=document.getElementById("modal");
+  m.innerHTML=`<div class="dialog-head"><h2>${esc(t("editItem"))}</h2>
+    <button class="circle-btn" id="x" aria-label="${esc(t("cancel"))}">${icon("close")}</button></div>
+    <label>${esc(t("name"))}<input id="f_name" value="${esc(i.name)}" maxlength="60"></label>
+    <div class="form-grid">
+      <label>${esc(t("price"))}<input id="f_price" type="number" min="0" step="1" value="${esc(i.price)}"></label>
+      <label>${esc(t("qty"))}<input id="f_qty" type="number" min="0" step="1" value="${esc(i.qty??"")}"></label>
+    </div>
+    <label>${esc(t("unit"))}<input id="f_unit" value="${esc(i.unit||"")}" maxlength="40" placeholder="250 g pack"></label>
+    <div class="form-actions"><button class="btn secondary" id="rm">${esc(t("remove"))}</button>
+      <button class="btn" id="sv">${esc(t("save"))}</button></div>`;
+  m.showModal();
+  m.querySelector("#x").onclick=()=>m.close();
+  m.querySelector("#sv").onclick=async()=>{
+    const body={name:m.querySelector("#f_name").value.trim(),
+      price:Number(m.querySelector("#f_price").value),
+      unit:m.querySelector("#f_unit").value.trim()||null,
+      qty:m.querySelector("#f_qty").value===""?null:Number(m.querySelector("#f_qty").value)};
+    if(!body.name||!(body.price>=0))return toast("Check the name and price.");
+    try{await post("/api/items/"+id,body);m.close();toast(t("saved"));await load()}catch(e){toast("Could not save.")}};
+  m.querySelector("#rm").onclick=async()=>{
+    try{await post("/api/items/"+id,{remove:true});m.close();toast(t("removed"));await load()}catch(e){toast("Could not remove.")}};
+}
+
+const heroPic=()=>(data.items.map(i=>i.photo).concat(data.shop.photo).filter(Boolean)[0]||"");
+function stats(){
+  const o=data.orders,pend=o.filter(x=>["new","accepted","ready"].includes(x.status));
+  const paid=o.filter(x=>x.paid).reduce((a,x)=>a+(x.total||0),0);
+  const due=o.filter(x=>!x.paid&&x.status!=="declined").reduce((a,x)=>a+(x.total||0),0);
+  return `<div class="stats">
+    <div class="stat"><p>${esc(t("pending"))}</p><strong>${pend.length}</strong></div>
+    <div class="stat"><p>${esc(t("listed"))}</p><strong>${data.items.length}</strong></div>
+    <div class="stat"><p>${esc(t("received"))}</p><strong>${money(paid)}</strong></div>
+    <div class="stat"><p>${esc(t("due"))}</p><strong>${money(due)}</strong></div></div>`;
+}
+const productCard=i=>`<article class="product"><div class="photo">
+  ${i.photo?`<img src="${esc(i.photo)}" alt="">`:""}<span class="badge">${esc(t("avail"))}</span></div>
+  <div class="product-body"><h3>${esc(i.name)}</h3><p>${itemMeta(i)}</p>
+  <div class="product-bottom"><strong>${money(i.price)}</strong>
+  <button data-edit="${i.id}">${esc(t("edit"))}</button></div></div></article>`;
+const orderRow=o=>`<div class="order-row"><div class="order-thumb"></div>
+  <div class="order-info"><strong>${esc(o.buyer_name)} · ${esc(o.qty)} × ${esc(o.item_name)}</strong>
+  <p>#MB${o.id} · ${esc((o.ts||"").slice(0,16).replace("T"," "))}</p></div>
+  <div class="order-price">${money(o.total)}<small>${esc(term(o.status))}</small></div></div>`;
+const orderCard=o=>`<article class="order-card"><div class="order-card-head">
+  <div><h3>${esc(o.buyer_name)}</h3><small class="muted">#MB${o.id} · ${esc((o.ts||"").slice(0,16).replace("T"," "))}</small></div>
+  <span class="status ${esc(o.status)}">${esc(term(o.status))}</span></div>
+  <div class="order-detail"><div class="order-thumb"></div>
+    <div style="flex:1"><strong>${esc(o.qty)} × ${esc(o.item_name)}</strong>
+    <p class="muted" style="margin:3px 0;font-size:14px">${o.paid?esc(t("paid"))+": "+esc(t("yes")):esc(t("paid"))+": "+esc(t("no"))}</p></div>
+  <strong>${money(o.total)}</strong></div>
+  <div class="order-card-footer"><small class="muted">${esc(term(data.shop.delivery||""))}</small>
+  <div class="toolbar">
+    ${o.status==="new"?`<button class="btn secondary small" data-act="declined" data-id="${o.id}">${esc(t("decline"))}</button>
+      <button class="btn green small" data-act="accepted" data-id="${o.id}">${icon("check")}${esc(t("accept"))}</button>`:""}
+    ${o.status==="accepted"?`<button class="btn small" data-act="ready" data-id="${o.id}">${esc(t("markReady"))}</button>`:""}
+    ${o.status==="ready"?`<button class="btn green small" data-act="completed" data-id="${o.id}">${esc(t("handed"))}</button>`:""}
+    ${!o.paid&&o.status!=="declined"?`<button class="text-btn" data-paid="${o.id}">${esc(t("recordPaid"))}</button>`:""}
+  </div></div></article>`;
+
+function chart(){
+  const by={};
+  data.orders.forEach(o=>{const d=(o.ts||"").slice(0,10);if(d)by[d]=(by[d]||0)+(o.total||0)});
+  const days=Object.keys(by).sort().slice(-7);
+  if(!days.length)return `<p class="muted">${esc(t("none"))}</p>`;
+  const max=Math.max(...days.map(d=>by[d]));
+  return `<div class="bar-chart">${days.map(d=>`<div class="bar-col"><span>${money(by[d])}</span>
+    <div class="bar" style="height:${Math.max(6,(by[d]/max)*100)}%"></div><span>${esc(d.slice(5))}</span></div>`).join("")}</div>`;
+}
+
+const views={
+ home(){const s=data.shop,pend=data.orders.filter(o=>["new","accepted","ready"].includes(o.status));
+  return `<div class="page-heading"><div><p class="eyebrow">${new Date().toLocaleDateString(lang==="kn"?"kn-IN":"en-IN",{weekday:"long",day:"numeric",month:"long"})}</p>
+    <h1>${esc(t("namaskara"))}, ${esc(s.name||s.business_name||"")}!</h1>
+    <p class="sub">${esc(s.about||"")}</p></div>
+    <button class="pill ${s.open?"":"off"}" id="toggleShop"><span class="dot"></span>${esc(s.open?t("open"):t("closed"))}</button></div>
+  <section class="hero"><div class="hero-copy"><p class="eyebrow">${esc(t("heroEye"))}</p>
+    <h2>${esc(t("heroH"))}</h2><p>${esc(t("heroP"))}</p></div>
+    <div class="hero-art">${heroPic()?`<img src="${esc(heroPic())}" alt="">`:""}
+    <div class="hero-label"><strong>${esc(t("madeIn"))} ${esc(s.area||s.region||"Karnataka")}</strong>
+    <small>${esc(t("neighbourhood"))}</small></div></div></section>
+  ${stats()}
+  <div class="dashboard-grid"><div>
+    <section class="panel"><div class="section-head"><h2>${esc(t("brief"))}</h2><small class="muted">Muse Spark</small></div>
+      <p id="brief" style="margin:0">${esc(briefText||"…")}</p></section>
+    <section class="panel"><div class="section-head"><h2>${esc(t("recent"))}</h2>
+      <button class="text-btn" data-go="orders">${esc(t("all"))}</button></div>
+      ${pend.slice(0,3).map(orderRow).join("")||`<p class="muted">${esc(t("caught"))}</p>`}</section>
+    <section class="panel"><div class="section-head"><h2>${esc(t("todays"))}</h2>
+      <a class="text-btn" href="/#shop-${esc(s.token)}">${esc(t("pub"))}</a></div>
+      ${data.items.length?`<div class="products">${data.items.slice(0,3).map(productCard).join("")}</div>`:`<p class="muted">${esc(t("none"))}</p>`}</section>
+    </div><div>
+    <section class="panel"><div class="section-head"><h2>${esc(t("doWhat"))}</h2></div>
+      <div class="action-grid">
+        <button class="action-tile" data-tg="1">${icon("mic")}<span>${esc(t("speak"))}</span></button>
+        <button class="action-tile" data-go="orders">${icon("bag")}<span>${esc(t("seeOrders"))}</span></button>
+        <button class="action-tile" id="toggleShop2">${icon("clock")}<span>${esc(data.shop.open?t("pause"):t("reopen"))}</span></button>
+        <button class="action-tile" data-go="money">${icon("wallet")}<span>${esc(t("checkMoney"))}</span></button>
+      </div></section>
+    <div class="tip"><h3>✦ ${esc(t("tipH"))}</h3><p>${esc(t("tipP"))}</p></div>
+  </div></div>`},
+ orders(){const f=[["all",t("all")],["new",t("fNew")],["accepted",t("fPrep")],["ready",t("fReady")],["completed",t("fDone")]];
+  const list=data.orders.filter(o=>filter==="all"||o.status===filter);
+  return `<div class="page-heading"><div><h1>${esc(t("orders"))}</h1><p class="sub">${esc(t("storySub"))}</p></div></div>
+  <div class="tabs">${f.map(([k,l])=>`<button class="${filter===k?"active":""}" data-f="${k}">${esc(l)} ${k==="all"?data.orders.length:data.orders.filter(o=>o.status===k).length}</button>`).join("")}</div>
+  ${list.map(orderCard).join("")||`<div class="panel empty">${esc(t("none"))}</div>`}`},
+ products(){return `<div class="page-heading"><div><h1>${esc(t("products"))}</h1><p class="sub">${esc(t("todays"))}</p></div>
+  <a class="btn secondary" href="/#shop-${esc(data.shop.token)}">${esc(t("pub"))}</a></div>
+  <section class="panel">${data.items.length?`<div class="products">${data.items.map(productCard).join("")}</div>`:`<p class="empty">${esc(t("none"))}</p>`}
+  <p class="notice">${esc(t("helpP"))}</p></section>`},
+ money(){const o=data.orders.filter(x=>x.status!=="declined");
+  return `<div class="page-heading"><div><h1>${esc(t("money"))}</h1><p class="sub">${esc(t("book"))}</p></div></div>
+  ${stats()}<section class="panel"><div class="section-head"><h2>${esc(t("book"))}</h2></div>
+  <div class="notice">${esc(t("payNote"))}</div>
+  ${o.map(x=>`<div class="ledger-row"><div><strong>${esc(x.buyer_name)} · #MB${x.id}</strong>
+    <p>${esc(x.qty)} × ${esc(x.item_name)} · ${x.paid?esc(t("yes")):esc(t("no"))}</p></div>
+    <div style="text-align:right"><strong>${money(x.total)}</strong>
+    ${!x.paid?`<div><button class="text-btn" data-paid="${x.id}">${esc(t("recordPaid"))}</button></div>`:""}</div></div>`).join("")
+    ||`<p class="muted">${esc(t("none"))}</p>`}</section>`},
+ story(){const done=data.orders.filter(o=>o.status==="completed");
+  const buyers=new Set(data.orders.map(o=>o.buyer_name)).size;
+  const days=new Set(data.orders.map(o=>(o.ts||"").slice(0,10)).filter(Boolean)).size;
+  return `<div class="page-heading"><div><h1>${esc(t("story"))}</h1><p class="sub">${esc(t("storySub"))}</p></div>
+    <button class="btn secondary" id="print">${icon("download")}PDF</button></div>
+  <section class="passport"><p class="eyebrow">${esc(t("passport"))}</p>
+    <h2>${esc(data.shop.business_name||"")}</h2>
+    <p>${esc([term(data.shop.category),data.shop.area,data.shop.region].filter(Boolean).join(" · "))}</p>
+    <div class="passport-grid"><div><strong>${done.length}</strong><span>${esc(t("done"))}</span></div>
+    <div><strong>${buyers}</strong><span>${esc(t("buyers"))}</span></div>
+    <div><strong>${days}</strong><span>${esc(t("days"))}</span></div></div></section>
+  <section class="panel"><div class="section-head"><h2>${esc(t("sales"))}</h2></div>${chart()}</section>
+  <div class="notice">${esc(t("disc"))}</div>`}};
+
+function wire(){
+  document.querySelectorAll("[data-go]").forEach(b=>b.onclick=()=>{view=b.dataset.go;location.hash=view;paint()});
+  document.querySelectorAll("[data-edit]").forEach(b=>b.onclick=()=>editItem(Number(b.dataset.edit)));
+  document.querySelectorAll("[data-act]").forEach(b=>b.onclick=()=>orderAction(Number(b.dataset.id),b.dataset.act));
+  document.querySelectorAll("[data-paid]").forEach(b=>b.onclick=()=>markPaid(Number(b.dataset.paid)));
+  document.querySelectorAll("[data-f]").forEach(b=>b.onclick=()=>{filter=b.dataset.f;paint()});
+  document.querySelectorAll("[data-tg]").forEach(b=>b.onclick=()=>toast(t("helpP")));
+  const p=document.getElementById("print");if(p)p.onclick=()=>window.print();
+  ["toggleShop","toggleShop2"].forEach(id=>{const el=document.getElementById(id);if(el)el.onclick=toggleShop});
+}
+function renderNav(){
+  const n=data.orders.filter(o=>["new","accepted","ready"].includes(o.status)).length;
+  const ic={home:"home",orders:"bag",products:"box",money:"wallet",story:"chart"};
+  document.getElementById("nav").innerHTML=["home","orders","products","money","story"].map(v=>
+    `<button class="${v===view?"active":""}" data-v="${v}">${icon(ic[v])}${esc(t(v))}${v==="orders"&&n?`<span class="count">${n}</span>`:""}</button>`).join("");
+  document.querySelectorAll("[data-v]").forEach(b=>b.onclick=()=>{view=b.dataset.v;location.hash=view;paint()});
+  document.getElementById("lang").innerHTML=["en","kn"].map(l=>
+    `<button class="${l===lang?"selected":""}" data-l="${l}">${l==="en"?"English":"ಕನ್ನಡ"}</button>`).join("");
+  document.querySelectorAll("[data-l]").forEach(b=>b.onclick=()=>{
+    if(b.dataset.l===lang)return;
+    lang=b.dataset.l;localStorage.setItem("mb_lang",lang);briefText="";paint();loadBrief()});
+}
+function paint(){
+  const s=data.shop;
+  document.getElementById("place").textContent=(s.area||s.region||"KARNATAKA").toUpperCase();
+  document.getElementById("av").innerHTML=s.photo?`<img class="avatar" src="${esc(s.photo)}" alt="">`:esc((s.business_name||s.name||"?")[0]);
+  document.getElementById("pname").textContent=s.business_name||s.name||"";
+  document.getElementById("prole").textContent=term(s.role||"");
+  document.getElementById("crumb").textContent=t(view);
+  document.getElementById("helpTitle").textContent=t("help");
+  document.getElementById("helpText").textContent=t("helpP");
+  renderNav();
+  document.getElementById("content").innerHTML=(views[view]||views.home)();
+  wire();
+}
+async function loadBrief(){
+  try{const b=await (await fetch("/api/brief?lang="+lang+"&s="+encodeURIComponent(S))).json();
+    if(b.text){briefText=b.text;const el=document.getElementById("brief");if(el)el.textContent=b.text}}catch(e){}
+}
+async function load(){
+  if(!S){document.getElementById("content").innerHTML='<p class="empty">Open this page from the link the bot sends with /dashboard.</p>';return}
+  try{
+    const r=await fetch("/api/me?s="+encodeURIComponent(S));
+    if(!r.ok)throw 0;
+    data=await r.json();paint();
+    if(!briefText)loadBrief();
+  }catch(e){if(!data)document.getElementById("content").innerHTML='<p class="empty">This link is not valid. Send /dashboard to the bot for a new one.</p>'}
+}
+addEventListener("hashchange",()=>{view=location.hash.slice(1)||"home";if(data)paint()});
+load();setInterval(()=>{if(!document.getElementById("modal").open)load()},12000);
+setInterval(loadBrief,120000);
+</script></body></html>

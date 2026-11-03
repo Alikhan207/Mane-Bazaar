@@ -9,21 +9,15 @@ const ffmpeg = process.env.FFMPEG_PATH || "ffmpeg";
 const KEY = process.env.MODEL_API_KEY;
 export const MODEL = process.env.MODEL || "muse-spark-1.3";
 // Plain fetch to Meta's OpenAI-compatible Chat Completions endpoint (no extra npm package).
-export const meta = {
-  chat: {
-    completions: {
-      create: async (body) => {
-        const r = await fetch("https://api.meta.ai/v1/chat/completions", {
-          method: "POST",
-          headers: { Authorization: `Bearer ${KEY}`, "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-        });
-        if (!r.ok) throw new Error(`chat ${r.status}: ${await r.text()}`);
-        return r.json();
-      }
-    }
-  }
-};
+export const meta = { chat: { completions: { create: async (body) => {
+  const r = await fetch("https://api.meta.ai/v1/chat/completions", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${KEY}`, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  if (!r.ok) throw new Error(`chat ${r.status}: ${await r.text()}`);
+  return r.json();
+} } } };
 
 // Muse Voice Transcribe accepts mono 16-bit WAV, so convert Telegram's OGG first.
 export async function transcribe(oggBuf) {
@@ -53,12 +47,10 @@ export async function analyzePhoto(buf) {
   const prompt = 'Classify this photo sent by a home seller in India. Reply with JSON only: {"kind":"profile|product|notebook|other","description":"one short sentence","items":[{"name":"","price":null,"qty":null}]}. profile = a person\'s portrait; product = food or goods for sale; notebook = a handwritten or printed list of items or orders (fill items, any language). Otherwise items is [].';
   const r = await meta.chat.completions.create({
     model: MODEL,
-    messages: [{
-      role: "user", content: [
-        { type: "text", text: prompt },
-        { type: "image_url", image_url: { url: `data:image/jpeg;base64,${buf.toString("base64")}` } },
-      ]
-    }],
+    messages: [{ role: "user", content: [
+      { type: "text", text: prompt },
+      { type: "image_url", image_url: { url: `data:image/jpeg;base64,${buf.toString("base64")}` } },
+    ] }],
   });
   const t = r.choices[0].message.content || "";
   try { return JSON.parse(t.replace(/```json|```/g, "").trim()); }
