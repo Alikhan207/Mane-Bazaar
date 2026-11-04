@@ -76,7 +76,8 @@ const guard = (fn) => async (ctx) => {
 bot.on("callback_query:data", async (ctx) => {
   const id = String(ctx.chat?.id || ctx.from.id);
   const picked = choices.get(id)?.[Number(ctx.callbackQuery.data.split(":")[1])];
-  await ctx.answerCallbackQuery(picked ? { text: picked.slice(0, 190) } : {});
+  // Telegram expires a tap after ~15 s; if we were busy, answering fails. Ignore that and carry on.
+  ctx.answerCallbackQuery(picked ? { text: picked.slice(0, 190) } : {}).catch(() => {});
   if (!picked) return;
   try {
     const original = ctx.callbackQuery.message?.text || "";
@@ -145,7 +146,18 @@ bot.command("rules", guard(async (id, ctx) => {
   return handle(id, "Please look this up for me: " + q, notify, polishItem);
 }));
 
-bot.on("message:text", guard((id, ctx) => handle(id, ctx.message.text, notify, polishItem)));
+bot.on("message:text", guard(async (id, ctx) => {
+  const reply = ctx.message.reply_to_message;
+  if (reply?.photo?.length) {
+    // She replied to an earlier photo: read that photo again, with her words as a hint.
+    const ph = reply.photo[reply.photo.length - 1];
+    const f = await ctx.api.getFile(ph.file_id);
+    const r = await fetch(`https://api.telegram.org/file/bot${TOKEN}/${f.file_path}`);
+    const analysis = await analyzePhoto(Buffer.from(await r.arrayBuffer()));
+    return handle(id, `[she replied to her earlier photo; it was read again] analysis: ${JSON.stringify(analysis)}\nHer message: ${ctx.message.text}`, notify, polishItem);
+  }
+  return handle(id, ctx.message.text, notify, polishItem);
+}));
 
 bot.on("message:voice", guard(async (id, ctx) => {
   const text = await transcribe(await download(ctx));
@@ -255,6 +267,12 @@ app.get("/api/brief", async (req, res) => {
   if (!s) return res.status(404).json({ error: "not found" });
   try { res.json(await brief(s.chat_id, String(req.query.lang || s.language || "en"))); }
   catch (e) { res.status(502).json({ error: String(e.message) }); }
+});
+
+// Never let one failed update stop the bot.
+bot.catch((err) => {
+  const e = err.error;
+  console.error("bot error:", e?.description || e?.message || e);
 });
 
 app.listen(3000, () => console.log("Website: http://localhost:3000"));

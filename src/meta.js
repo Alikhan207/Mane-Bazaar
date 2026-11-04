@@ -10,13 +10,27 @@ const KEY = process.env.MODEL_API_KEY;
 export const MODEL = process.env.MODEL || "muse-spark-1.3";
 // Plain fetch to Meta's OpenAI-compatible Chat Completions endpoint (no extra npm package).
 export const meta = { chat: { completions: { create: async (body) => {
-  const r = await fetch("https://api.meta.ai/v1/chat/completions", {
-    method: "POST",
-    headers: { Authorization: `Bearer ${KEY}`, "Content-Type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  if (!r.ok) throw new Error(`chat ${r.status}: ${await r.text()}`);
-  return r.json();
+  // Two tries with a timeout, because the connection here drops now and then.
+  let last;
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      const r = await fetch("https://api.meta.ai/v1/chat/completions", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${KEY}`, "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(60000),
+      });
+      if (r.ok) return r.json();
+      last = new Error(`chat ${r.status}: ${await r.text()}`);
+      if (r.status < 500 && r.status !== 429) throw last; // a real request error: don't retry
+    } catch (e) {
+      last = e;
+      if (/^chat 4(?!29)/.test(String(e.message))) throw e;
+    }
+    console.log(`meta: attempt ${attempt} failed (${String(last?.message || last).slice(0, 80)})`);
+    if (attempt < 2) await new Promise((res) => setTimeout(res, 1500));
+  }
+  throw last;
 } } } };
 
 // Muse Voice Transcribe accepts mono 16-bit WAV, so convert Telegram's OGG first.
@@ -44,7 +58,12 @@ export async function transcribe(oggBuf) {
 
 // Muse Spark vision: classify a photo and read item lists from notebook pages.
 export async function analyzePhoto(buf) {
-  const prompt = 'Classify this photo sent by a home seller in India. Reply with JSON only: {"kind":"profile|product|notebook|other","description":"one short sentence","items":[{"name":"","price":null,"qty":null}]}. profile = a person\'s portrait; product = food or goods for sale; notebook = a handwritten or printed list of items or orders (fill items, any language). Otherwise items is [].';
+  const prompt = `Classify this photo sent by a home seller in India, then extract what is useful. The photo may be sideways or upside down: read it in whatever orientation makes the text upright.
+Reply with JSON only:
+{"kind":"profile|product|notebook|other","description":"one short sentence","notes":"","items":[{"name":"","price":null,"unit":"","qty":null,"unsure":""}]}
+profile = a person's portrait. product = food or goods for sale. notebook = a handwritten or printed list of items, prices or orders, in any language.
+For a notebook: one entry per line item. price is the price for ONE unit (one piece, one packet, one kg) as a number. If a line gives a total for many units instead, put that in unsure and leave price null rather than dividing. unit is what one price buys, such as "piece" or "250 g pack". qty is how many are available. Keep size or age ranges in the name, for example "Baby suit (0-5 years)". If any digit is hard to read, say which in unsure instead of guessing. Put anything that is not a line item, such as a discount written at the top, in notes.
+For other kinds, items is [].`;
   const r = await meta.chat.completions.create({
     model: MODEL,
     messages: [{ role: "user", content: [
