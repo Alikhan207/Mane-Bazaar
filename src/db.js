@@ -39,6 +39,13 @@ CREATE TABLE IF NOT EXISTS orders(id INTEGER PRIMARY KEY AUTOINCREMENT, seller_c
 CREATE TABLE IF NOT EXISTS visits(chat_id TEXT PRIMARY KEY, shop_token TEXT);
 `);
 
+// Add columns to a database that already exists (CREATE TABLE IF NOT EXISTS won't).
+for (const sql of [
+  "ALTER TABLE sellers ADD COLUMN upi_id TEXT",
+  "ALTER TABLE sellers ADD COLUMN brief_sent TEXT",
+  "ALTER TABLE items ADD COLUMN original_photo TEXT",
+]) { try { sq.exec(sql); } catch {} }
+
 export const today = () => new Date().toISOString().slice(0, 10);
 
 export function ensureSeller(chatId) {

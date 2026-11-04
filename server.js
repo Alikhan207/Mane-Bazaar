@@ -1,10 +1,10 @@
 import "dotenv/config";
 import express from "express";
 import fs from "node:fs";
-import { Bot, InlineKeyboard } from "grammy";
+import { Bot, InlineKeyboard, InputFile } from "grammy";
 import { db, today, ensureSeller } from "./src/db.js";
 import { handle, brief } from "./src/agent.js";
-import { transcribe, analyzePhoto } from "./src/meta.js";
+import { transcribe, analyzePhoto, segmentItem, polishPhoto, analyzeVideo } from "./src/meta.js";
 
 const TOKEN = process.env.TELEGRAM_TOKEN;
 const bot = new Bot(TOKEN);
@@ -37,6 +37,29 @@ const say = async (ctx, id, out) => {
   return ctx.reply(r.text);
 };
 
+// SAM 3.1 finds the product, Muse Image redraws it on a clean background.
+async function polishItem(chatId, info) {
+  try {
+    const src = fs.readFileSync(info.photo.replace(/^\//, ""));
+    const seg = await segmentItem(src, info.name);
+    if (seg) console.log("sam: found", info.name);
+    const out = await polishPhoto(src, info.name);
+    if (!out) {
+      return bot.api.sendMessage(chatId, `I could not clean up the ${info.name} photo just now. Your original photo is still on your page.`);
+    }
+    const file = `uploads/${chatId}-${Date.now()}-clean.jpg`;
+    fs.writeFileSync(file, out);
+    const row = db.prepare("SELECT photo, original_photo FROM items WHERE id=?").get(info.item_id);
+    db.prepare("UPDATE items SET photo=?, original_photo=COALESCE(original_photo,?) WHERE id=?")
+      .run("/" + file, row?.photo ?? null, info.item_id);
+    await bot.api.sendPhoto(chatId, new InputFile(file),
+      { caption: `${info.name}: cleaned up and now on your page. Your original photo is kept.` });
+  } catch (e) {
+    console.error("polish:", e.message);
+    bot.api.sendMessage(chatId, "Sorry, the photo clean-up did not work. Your original photo is unchanged.").catch(() => {});
+  }
+}
+
 const guard = (fn) => async (ctx) => {
   const id = String(ctx.chat.id);
   ensureSeller(id);
@@ -64,7 +87,7 @@ bot.on("callback_query:data", async (ctx) => {
   ensureSeller(id);
   try {
     await ctx.replyWithChatAction("typing");
-    await say(ctx, id, await handle(id, picked, notify));
+    await say(ctx, id, await handle(id, picked, notify, polishItem));
   } catch (e) {
     console.error(e);
     await ctx.reply("Sorry, something went wrong. Please try again.");
@@ -77,15 +100,15 @@ bot.command("start", guard(async (id, ctx) => {
   if (payload.startsWith("shop_")) {
     db.prepare("INSERT INTO visits(chat_id,shop_token) VALUES(?,?) ON CONFLICT(chat_id) DO UPDATE SET shop_token=excluded.shop_token")
       .run(id, payload.slice(5));
-    return handle(id, "[buyer opened this shop from the website]", notify);
+    return handle(id, "[buyer opened this shop from the website]", notify, polishItem);
   }
   db.prepare("DELETE FROM visits WHERE chat_id=?").run(id);
-  return handle(id, "hi", notify);
+  return handle(id, "hi", notify, polishItem);
 }));
 
 bot.command("shop", guard(async (id) => {
   db.prepare("DELETE FROM visits WHERE chat_id=?").run(id);
-  return handle(id, "[switched back to my own shop]", notify);
+  return handle(id, "[switched back to my own shop]", notify, polishItem);
 }));
 
 bot.command("dashboard", guard(async (id) => {
@@ -94,13 +117,54 @@ bot.command("dashboard", guard(async (id) => {
   return { text: `Your dashboard: ${base}/dashboard.html?s=${s.token}\nYour public page: ${base}/#shop-${s.token}\nKeep the dashboard link private.`, buttons: [] };
 }));
 
-bot.on("message:text", guard((id, ctx) => handle(id, ctx.message.text, notify)));
+bot.command("brief", guard(async (id) => {
+  const s = ensureSeller(id);
+  const b = await brief(id, s.language || "en");
+  return { text: b.text || "Nothing to report yet.", buttons: [] };
+}));
+
+// Morning brief, once a day at 08:00 in the seller's local time.
+async function sendMorningBriefs() {
+  const now = new Date(Date.now() + 5.5 * 3600 * 1000); // IST
+  if (now.getUTCHours() !== 8) return;
+  const day = now.toISOString().slice(0, 10);
+  const rows = db.prepare(`SELECT chat_id, language FROM sellers
+    WHERE business_name IS NOT NULL AND (brief_sent IS NULL OR brief_sent <> ?)`).all(day);
+  for (const r of rows) {
+    try {
+      const b = await brief(r.chat_id, r.language || "en");
+      if (b.text) await bot.api.sendMessage(r.chat_id, "☀ " + b.text);
+      db.prepare("UPDATE sellers SET brief_sent=? WHERE chat_id=?").run(day, r.chat_id);
+    } catch (e) { console.error("brief push:", e.message); }
+  }
+}
+setInterval(() => sendMorningBriefs().catch(() => {}), 10 * 60 * 1000);
+
+bot.command("rules", guard(async (id, ctx) => {
+  const q = (ctx.match || "").trim() || "Which registrations does a small home food seller in Karnataka need, and which are optional at low turnover?";
+  return handle(id, "Please look this up for me: " + q, notify, polishItem);
+}));
+
+bot.on("message:text", guard((id, ctx) => handle(id, ctx.message.text, notify, polishItem)));
 
 bot.on("message:voice", guard(async (id, ctx) => {
   const text = await transcribe(await download(ctx));
   await ctx.reply("Heard: " + text);
-  return handle(id, "[voice note] " + text, notify);
+  return handle(id, "[voice note] " + text, notify, polishItem);
 }));
+
+// A short clip of today's batch: Muse Spark lists the items it sees.
+const onVideo = guard(async (id, ctx) => {
+  const v = ctx.message.video || ctx.message.video_note || ctx.message.animation;
+  if (v?.file_size && v.file_size > 19 * 1024 * 1024) {
+    return { text: "That video is too big for me. Please send a short clip, about 15 seconds.", buttons: [] };
+  }
+  await ctx.reply("Watching your video…");
+  const analysis = await analyzeVideo(await download(ctx));
+  return handle(id, `[video] analysis: ${JSON.stringify(analysis)}`, notify, polishItem);
+});
+bot.on("message:video", onVideo);
+bot.on("message:video_note", onVideo);
 
 bot.on("message:photo", guard(async (id, ctx) => {
   const buf = await download(ctx);
@@ -108,7 +172,7 @@ bot.on("message:photo", guard(async (id, ctx) => {
   const file = `uploads/${id}-${Date.now()}.jpg`;
   fs.writeFileSync(file, buf);
   const pid = db.prepare("INSERT INTO photos(chat_id,path,kind) VALUES(?,?,?)").run(id, file, analysis.kind).lastInsertRowid;
-  return handle(id, `[photo id=${pid}] analysis: ${JSON.stringify(analysis)}`, notify);
+  return handle(id, `[photo id=${pid}] analysis: ${JSON.stringify(analysis)}`, notify, polishItem);
 }));
 
 const app = express();

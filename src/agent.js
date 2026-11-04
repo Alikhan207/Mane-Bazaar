@@ -1,5 +1,5 @@
 import { db, today, ensureSeller } from "./db.js";
-import { meta, MODEL } from "./meta.js";
+import { meta, MODEL, upiLink, groundedAnswer } from "./meta.js";
 
 const fn = (name, description, properties = {}, required = []) => ({
   type: "function", function: { name, description, parameters: { type: "object", properties, required } },
@@ -19,6 +19,7 @@ const tools = [
     region: { type: "string", enum: REGIONS },
     delivery: { type: "string", enum: DELIVERY },
     about: { type: "string", description: "One or two sentences in her own words, for the public page." },
+    upi_id: { type: "string", description: "Her UPI ID, such as name@okaxis, so buyers can pay her directly. Optional; never guess it." },
   }),
   fn("set_todays_items", "Replace today's list of items. Call only after she said yes to the read-back.", {
     items: { type: "array", items: { type: "object", properties: {
@@ -27,7 +28,18 @@ const tools = [
   }, ["items"]),
   fn("set_profile_photo", "Use a photo she sent as her profile picture.", { photo_id: { type: "number" } }, ["photo_id"]),
   fn("attach_item_photo", "Attach a photo to one of today's items.", { photo_id: { type: "number" }, item_name: { type: "string" } }, ["photo_id", "item_name"]),
-  fn("get_my_shop", "Read her account, today's items and her orders."),
+  fn("add_items", "ADD items to today's list, keeping the ones already there. Use this for a notebook photo or when she adds a few more. Call only after she said yes to the read-back.", {
+    items: { type: "array", items: { type: "object", properties: {
+      name: { type: "string" }, price: { type: "number" }, unit: { type: "string" }, qty: { type: "number" },
+    }, required: ["name", "price"] } },
+  }, ["items"]),
+  fn("polish_item_photo", "Clean up the photo of one of today's items: find the product in the picture and redraw it on a plain background. Ask her first, and tell her the original is kept.", {
+    item_name: { type: "string" },
+  }, ["item_name"]),
+  fn("ask_rules", "Look up registrations or rules for her kind of home business (FSSAI, Udyam, GST, shop licence) using live web search. Use only when she asks about licences, registration, rules or compliance.", {
+    question: { type: "string", description: "Her question, rewritten to be specific, e.g. 'Does a home pickle seller in Karnataka with small sales need FSSAI registration?'" },
+  }, ["question"]),
+  fn("get_my_shop", "Read her account, today\'s items and her orders."),
   fn("update_order", "Change the status of one of her orders, or mark it paid.", {
     order_id: { type: "number" }, status: { type: "string", enum: ["accepted", "ready", "completed", "declined"] },
     paid: { type: "boolean" },
@@ -60,9 +72,10 @@ const exec = {
   save_profile(id, a) {
     db.prepare(`UPDATE sellers SET language=COALESCE(?,language), role=COALESCE(?,role), name=COALESCE(?,name),
       business_name=COALESCE(?,business_name), category=COALESCE(?,category), area=COALESCE(?,area),
-      region=COALESCE(?,region), delivery=COALESCE(?,delivery), about=COALESCE(?,about) WHERE chat_id=?`)
+      region=COALESCE(?,region), delivery=COALESCE(?,delivery), about=COALESCE(?,about),
+      upi_id=COALESCE(?,upi_id) WHERE chat_id=?`)
       .run(a.language ?? null, a.role ?? null, a.name ?? null, a.business_name ?? null, a.category ?? null,
-        a.area ?? null, a.region ?? null, a.delivery ?? null, a.about ?? null, id);
+        a.area ?? null, a.region ?? null, a.delivery ?? null, a.about ?? null, a.upi_id ?? null, id);
     return shopOf(id);
   },
   set_todays_items(id, a) {
@@ -83,6 +96,31 @@ const exec = {
     const r = db.prepare("UPDATE items SET photo=? WHERE chat_id=? AND day=? AND lower(name)=lower(?)")
       .run("/" + p, id, today(), a.item_name);
     return r.changes ? { ok: true } : { error: "item not in today's list" };
+  },
+  add_items(id, a) {
+    const ins = db.prepare("INSERT INTO items(chat_id,name,price,unit,qty,day) VALUES(?,?,?,?,?,?)");
+    const have = new Set(db.prepare("SELECT lower(name) n FROM items WHERE chat_id=? AND day=?")
+      .all(id, today()).map((r) => r.n));
+    let added = 0, skipped = [];
+    for (const i of a.items) {
+      if (have.has(String(i.name).toLowerCase())) { skipped.push(i.name); continue; }
+      ins.run(id, i.name, i.price, i.unit ?? null, i.qty ?? null, today());
+      added++;
+    }
+    return { added, already_listed: skipped, ...shopOf(id) };
+  },
+  polish_item_photo(id, a) {
+    const it = db.prepare("SELECT id,name,photo FROM items WHERE chat_id=? AND day=? AND lower(name)=lower(?)")
+      .get(id, today(), a.item_name);
+    if (!it) return { error: "item not in today's list" };
+    if (!it.photo) return { error: "that item has no photo yet; ask her to send one" };
+    return { _polish: { item_id: it.id, name: it.name, photo: it.photo },
+      note: "Tell her you are cleaning up the photo now and it will take a few seconds." };
+  },
+  async ask_rules(id, a) {
+    const lang = db.prepare("SELECT language FROM sellers WHERE chat_id=?").get(id)?.language || "en";
+    try { return await groundedAnswer(a.question, lang); }
+    catch (e) { return { error: "lookup failed", detail: String(e.message).slice(0, 120) }; }
   },
   get_my_shop: (id) => shopOf(id),
   update_order(id, a) {
@@ -110,7 +148,9 @@ const exec = {
       note: "This exact order already exists. Do not place it again. Tell the buyer it is already confirmed." };
     const oid = db.prepare("INSERT INTO orders(seller_chat_id,buyer_chat_id,buyer_name,item_name,qty,total,note) VALUES(?,?,?,?,?,?,?)")
       .run(shop.chat_id, id, a.buyer_name, item.name, a.qty, total, a.note ?? null).lastInsertRowid;
+    const pay = upiLink({ vpa: shop.upi_id, name: shop.business_name, amount: total, note: `Mane Bazaar order ${oid}` });
     return { ok: true, order_id: oid, item: item.name, qty: a.qty, total, shop: shop.business_name,
+      payment_link: pay || undefined,
       _notify: { chat_id: shop.chat_id, text: `New order #${oid}: ${a.qty} x ${item.name} - Rs ${total}, from ${a.buyer_name}.${a.note ? " Note: " + a.note : ""}` } };
   },
   list_shops(_id, a) {
@@ -141,6 +181,7 @@ Rules:
 - Ask what she or he wants and how much, then the buyer's name.
 - Read the order back with the total, ask for a yes, and only then call place_order.
 - Mention the shop's delivery terms before confirming.
+- place_order may return a payment_link. If it does, give it to the buyer on its own line and say it opens their UPI app and pays the seller directly, and that Mane Bazaar does not take the money. If there is no link, say payment is on pickup or delivery, as the seller arranges.
 - Reply in the buyer's language (Kannada, Hindi or English), short and simple.
 - Never invent items or prices. Never promise a delivery time the seller has not given.
 TAPPABLE CHOICES: when your message asks the buyer to pick from a small set, end it with one line of the form
@@ -161,7 +202,11 @@ Then ask what she is selling today.
 Rules:
 - Always reply in her language (kn = Kannada script, hi = Hindi, en = English). Keep it short and simple.
 - When she tells you items, read the list back (item, price, unit, quantity) and ask for a yes. Only after yes, call set_todays_items.
-- Photos arrive as "[photo id=N] analysis: {...}". kind profile means call set_profile_photo now. kind product means ask which item, then attach_item_photo. kind notebook means read the extracted items back for her to confirm.
+- Photos arrive as "[photo id=N] analysis: {...}". kind profile means call set_profile_photo now. kind product means ask which item, then attach_item_photo, and afterwards offer once to clean up the photo background with polish_item_photo.
+- kind notebook means she photographed her paper book. Read the extracted items back with prices, ask for a yes, then call add_items (not set_todays_items, so nothing she already listed is lost). If a price or quantity is missing from the page, ask her for it rather than guessing.
+- Videos arrive as "[video] analysis: {...}" with the items seen in her clip. Read the list back, ask her for the price (and unit) of each, then ask for a yes and call add_items. Never invent prices.
+- If she asks about FSSAI, Udyam, GST, licences or rules, call ask_rules. Reply with its answer in short sentences and then list the sources as plain links on their own lines. Present it as optional guidance, never as a requirement to keep selling.
+- Ask for her UPI ID once, after the shop is set up, so buyers can pay her directly. Make clear it is optional and that Mane Bazaar never holds her money. Save it with save_profile. Never invent a UPI ID.
 - Voice notes arrive as "[voice note] transcript". The transcript can have small mistakes, so confirm numbers.
 - If she asks about orders, money or what to do first, call get_my_shop and answer from it. You may use update_order when she accepts, declines or completes an order, or records payment.
 - Never invent prices, quantities or orders. Make no health or nutrition claims. Do not promise loans or credit.
@@ -179,7 +224,7 @@ function splitButtons(out) {
   return { text: (out.slice(0, m.index) + out.slice(m.index + m[0].length)).trim(), buttons };
 }
 
-export async function handle(id, text, notify) {
+export async function handle(id, text, notify, onPolish) {
   ensureSeller(id);
   const hist = db.prepare("SELECT role,content FROM messages WHERE chat_id=? ORDER BY id DESC LIMIT 12").all(id).reverse();
   const messages = [{ role: "system", content: system(id) }, ...hist, { role: "user", content: text }];
@@ -194,10 +239,11 @@ export async function handle(id, text, notify) {
     messages.push(m);
     for (const c of m.tool_calls) {
       let out;
-      try { out = exec[c.function.name](id, JSON.parse(c.function.arguments || "{}")); }
+      try { out = await exec[c.function.name](id, JSON.parse(c.function.arguments || "{}")); }
       catch (e) { out = { error: String(e.message) }; }
       console.log("tool:", c.function.name, JSON.stringify(out).slice(0, 160));
       if (out?._notify && notify) { notify(out._notify.chat_id, out._notify.text); delete out._notify; }
+      if (out?._polish && onPolish) { onPolish(id, out._polish); delete out._polish; }
       messages.push({ role: "tool", tool_call_id: c.id, content: JSON.stringify(out) });
     }
   }
