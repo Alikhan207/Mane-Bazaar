@@ -3,7 +3,7 @@ import express from "express";
 import fs from "node:fs";
 import { Bot, InlineKeyboard, InputFile } from "grammy";
 import { db, today, ensureSeller } from "./src/db.js";
-import { handle, brief, askMarket } from "./src/agent.js";
+import { handle, brief, askMarket, weeklyReview } from "./src/agent.js";
 import { transcribe, analyzePhoto, segmentItem, polishPhoto, analyzeVideo, transcribeVideoAudio } from "./src/meta.js";
 
 const TOKEN = process.env.TELEGRAM_TOKEN;
@@ -140,6 +140,13 @@ async function sendMorningBriefs() {
   }
 }
 setInterval(() => sendMorningBriefs().catch(() => {}), 10 * 60 * 1000);
+
+bot.command("review", guard(async (id) => {
+  const s = ensureSeller(id);
+  await bot.api.sendMessage(id, "Looking at your whole week…").catch(() => {});
+  const r = await weeklyReview(id, s.language || "en");
+  return { text: r.text, buttons: [] };
+}));
 
 bot.command("rules", guard(async (id, ctx) => {
   const q = (ctx.match || "").trim() || "Which registrations does a small home food seller in Karnataka need, and which are optional at low turnover?";
@@ -280,6 +287,13 @@ app.post("/api/ask", async (req, res) => {
   if (!q) return res.status(400).json({ error: "Ask a question." });
   try { res.json(await askMarket(q)); }
   catch (e) { console.error("ask:", e.message); res.status(502).json({ error: "The assistant is busy. Please try again." }); }
+});
+
+app.get("/api/review", async (req, res) => {
+  const s = bySession(req);
+  if (!s) return res.status(404).json({ error: "not found" });
+  try { res.json(await weeklyReview(s.chat_id, String(req.query.lang || s.language || "en"))); }
+  catch (e) { res.status(502).json({ error: "The review is not available right now." }); }
 });
 
 app.get("/api/brief", async (req, res) => {

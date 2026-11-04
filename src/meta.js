@@ -190,7 +190,7 @@ export async function groundedAnswer(question, lang = "en") {
   const langName = lang === "kn" ? "Kannada" : lang === "hi" ? "Hindi" : "English";
   const instructions = `You help a small home-food or home-craft seller in Karnataka, India understand registrations such as FSSAI, Udyam, GST or a shop licence.
 Answer in ${langName}, in at most 5 short sentences, simply. Prefer official government sources (fssai.gov.in, udyamregistration.gov.in, gst.gov.in, karnataka.gov.in).
-Say clearly when something depends on her turnover or situation. This is general guidance, not legal advice; say so in one short line. Never say she must stop selling.`;
+Say clearly when something depends on her turnover or situation. If a registration is required by law, say so plainly and explain the simplest way to get it (for FSSAI that is usually Basic Registration on FoSCoS). Never suggest it is fine to sell without a registration the law requires, and do not lecture or threaten her. End with one short line saying this is general guidance, not legal advice.`;
   const r = await fetch("https://api.meta.ai/v1/responses", {
     method: "POST",
     headers: { Authorization: `Bearer ${KEY}`, "Content-Type": "application/json" },

@@ -232,7 +232,7 @@ Rules:
 - kind notebook means she photographed her paper book. Read the extracted items back as a numbered list: name, price per unit, unit, quantity. Mention anything in notes (such as an offer) in one line. For any item with an unsure field or a missing price, ask about that item specifically instead of guessing. Ask for a yes, then call add_items (not set_todays_items, so nothing she already listed is lost).
 - When she corrects a number, use exactly what she says and read the whole list back again before saving.
 - Videos arrive as "[video] analysis: {...}" with the items seen in her clip, and sometimes "What she said in the video: ...". Combine both: what she said is the best source for names, prices and quantities, and what was seen confirms which items. Read the combined list back, ask only for whatever is still missing, then ask for a yes and call add_items. Never invent prices.
-- If she asks about FSSAI, Udyam, GST, licences or rules, call ask_rules. Reply with its answer in short sentences and then list the sources as plain links on their own lines. Present it as optional guidance, never as a requirement to keep selling.
+- If she asks about FSSAI, Udyam, GST, licences or rules, call ask_rules. Reply with its answer in short sentences and then list the sources as plain links on their own lines. Keep its wording on what the law requires; do not soften a requirement into something optional.
 - Ask for her UPI ID once, after the shop is set up, so buyers can pay her directly. Make clear it is optional and that Mane Bazaar never holds her money. Save it with save_profile. Never invent a UPI ID.
 - Voice notes arrive as "[voice note] transcript". The transcript can have small mistakes, so confirm numbers.
 - If she asks about orders, money or what to do first, call get_my_shop and answer from it. You may use update_order when she accepts, declines or completes an order, or records payment.
@@ -348,4 +348,101 @@ Categories: homemade_food, pickles_masala, snacks_sweets, cloth_tailoring, craft
     }
   }
   return { text: "Sorry, I could not find an answer just now.", shops: [] };
+}
+
+
+// ---- Weekly business review: numbers computed in code, story written by Muse Wonder ----
+export function businessFacts(chatId) {
+  const orders = db.prepare(`SELECT id, buyer_chat_id, buyer_name, item_name, qty, total, status, paid, ts
+    FROM orders WHERE seller_chat_id=? AND status <> 'declined' ORDER BY ts`).all(chatId);
+  const since = (days) => new Date(Date.now() - days * 86400000).toISOString().replace("T", " ").slice(0, 19);
+  const week = orders.filter((o) => o.ts >= since(7));
+  const prevWeek = orders.filter((o) => o.ts >= since(14) && o.ts < since(7));
+  const sum = (list) => Math.round(list.reduce((a, o) => a + (o.total || 0), 0));
+
+  const byItem = {};
+  for (const o of week) {
+    const k = o.item_name;
+    byItem[k] ??= { item: k, orders: 0, units: 0, revenue: 0 };
+    byItem[k].orders++; byItem[k].units += o.qty || 0; byItem[k].revenue += o.total || 0;
+  }
+  const items = Object.values(byItem).sort((a, b) => b.revenue - a.revenue)
+    .map((x) => ({ ...x, revenue: Math.round(x.revenue) }));
+
+  const days = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+  const byDay = {};
+  for (const o of week) {
+    const d = days[new Date(o.ts.replace(" ", "T") + "Z").getDay()];
+    byDay[d] = (byDay[d] || 0) + (o.total || 0);
+  }
+
+  const buyerCounts = {};
+  for (const o of orders) buyerCounts[o.buyer_chat_id || o.buyer_name] = (buyerCounts[o.buyer_chat_id || o.buyer_name] || 0) + 1;
+  const buyers = Object.keys(buyerCounts).length;
+  const repeat = Object.values(buyerCounts).filter((n) => n > 1).length;
+
+  const listed = db.prepare("SELECT name FROM items WHERE chat_id=?").all(chatId).map((r) => r.name);
+  const notSold = listed.filter((n) => !byItem[n]);
+  const firstDay = orders[0]?.ts?.slice(0, 10) || null;
+  const historyDays = firstDay ? Math.max(1, Math.round((Date.now() - Date.parse(firstDay)) / 86400000)) : 0;
+
+  return {
+    this_week: { orders: week.length, revenue: sum(week),
+      received: sum(week.filter((o) => o.paid)), still_due: sum(week.filter((o) => !o.paid)) },
+    last_week: { orders: prevWeek.length, revenue: sum(prevWeek) },
+    items_this_week: items,
+    listed_but_not_sold_this_week: notSold,
+    sales_by_day_this_week: Object.fromEntries(Object.entries(byDay).map(([k, v]) => [k, Math.round(v)])),
+    buyers_all_time: buyers, repeat_buyers_all_time: repeat,
+    history_days: historyDays,
+  };
+}
+
+const reviewCache = new Map();
+
+export async function weeklyReview(chatId, lang = "en") {
+  const key = `${chatId}:${lang}:${new Date().toISOString().slice(0, 10)}`;
+  if (reviewCache.has(key)) return reviewCache.get(key);
+  const facts = businessFacts(chatId);
+  if (!facts.this_week.orders && !facts.last_week.orders) {
+    return { text: lang === "kn" ? "ಈ ವಾರ ಇನ್ನೂ ಆರ್ಡರ್‌ಗಳಿಲ್ಲ. ಆರ್ಡರ್ ಬಂದ ನಂತರ ಇಲ್ಲಿ ನಿಮ್ಮ ವಾರದ ವಿಮರ್ಶೆ ಕಾಣುತ್ತದೆ."
+      : "No orders yet this week. Your weekly review will appear here once orders come in.", facts, model: null };
+  }
+  const langName = lang === "kn" ? "Kannada script" : lang === "hi" ? "Hindi" : "English";
+  const prompt = `You are writing a weekly business review for a woman who runs a small home business on Mane Bazaar. She reads it on her phone.
+Use ONLY these figures, computed from her real orders. Do not invent any number, item, customer or trend:
+${JSON.stringify(facts)}
+Write, in ${langName}, in plain short sentences:
+1. How the week went: orders, money that came in, money still due, and the change from last week if last week had orders.
+2. What sold best, and what is listed but did not sell.
+3. Repeat buyers: how many came back, and one practical idea to keep them.
+4. One or two concrete suggestions for next week (what to make more of, what to cut back, which day to have stock ready), each tied to a figure above.
+5. Seasonal trends: only if history_days is 60 or more. Otherwise say in one line that seasonal patterns will show after a few months of orders.
+Keep it under 160 words. No greeting, no emoji, no headings. Never mention loans, credit scores or health.`;
+  // Muse Wonder gets one try (it reasons longer); Muse Spark is the fallback so she always gets a review.
+  const once = async (model) => {
+    const r = await fetch("https://api.meta.ai/v1/chat/completions", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${process.env.MODEL_API_KEY}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ model, messages: [{ role: "user", content: prompt }] }),
+      signal: AbortSignal.timeout(90000),
+    });
+    if (!r.ok) throw new Error(`${r.status}: ${(await r.text()).slice(0, 150)}`);
+    return r.json();
+  };
+  for (const model of ["muse-wonder-1.0", MODEL]) {
+    try {
+      const r = model === MODEL
+        ? await meta.chat.completions.create({ model, messages: [{ role: "user", content: prompt }] })
+        : await once(model);
+      const text = r.choices?.[0]?.message?.content?.trim();
+      if (text) {
+        console.log("review written by", model);
+        const out = { text, facts, model };
+        reviewCache.set(key, out);
+        return out;
+      }
+    } catch (e) { console.log(`review (${model}) failed:`, String(e.message).slice(0, 120)); }
+  }
+  throw new Error("review unavailable");
 }

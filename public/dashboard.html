@@ -35,7 +35,7 @@ const KN={home_seller:"ಮನೆ ಮಾರಾಟಗಾರರು",farmer:"ರೈ�
 const term=v=>(lang==="kn"&&KN[v])?KN[v]:label(v);
 const money=n=>"₹"+Number(n||0).toLocaleString("en-IN");
 const S=new URLSearchParams(location.search).get("s")||"";
-let lang=localStorage.getItem("mb_lang")||"en",view=location.hash.slice(1)||"home",data=null,briefText="",filter="all";
+let lang=localStorage.getItem("mb_lang")||"en",view=location.hash.slice(1)||"home",data=null,briefText="",filter="all",reviewText="",reviewModel="";
 
 const P={home:'M3 10l9-7 9 7v10H3Z M9 20v-7h6v7',bag:'M5 7h14l1 14H4Z M8 8V6a4 4 0 0 1 8 0v2',
  box:'M3 7l9-4 9 4v10l-9 4-9-4Z M3 7l9 5 9-5 M12 12v9',wallet:'M3 5h17v15H3Z M16 10h5v6h-5Z M5 5V3h12',
@@ -66,7 +66,7 @@ const L={en:{home:"My home",orders:"My orders",products:"My products",money:"My 
  payNote:"\u201cPaid\u201d means you confirmed it. No payment here is bank-verified.",
  help:"A little help?",helpP:"You can do everything here, or just message the bot in Kannada.",
  buyer:"Buyer",item:"Item",qtyS:"Qty",total:"Total",status:"Status",paid:"Paid",yes:"Yes",no:"Not yet",
- fNew:"New",fPrep:"Preparing",fReady:"Ready",fDone:"Completed",madeIn:"Made with love, in",neighbourhood:"Your neighbourhood favourites",namaskara:"Namaskara",seller:"Home seller",farmer:"Farmer"},
+ fNew:"New",fPrep:"Preparing",fReady:"Ready",fDone:"Completed",weekly:"Your week, reviewed",getReview:"Review my week",reviewing:"Looking at your whole week…",madeIn:"Made with love, in",neighbourhood:"Your neighbourhood favourites",namaskara:"Namaskara",seller:"Home seller",farmer:"Farmer"},
  kn:{home:"ನನ್ನ ಮನೆ",orders:"ನನ್ನ ಆರ್ಡರ್",products:"ನನ್ನ ಉತ್ಪನ್ನ",money:"ನನ್ನ ಹಣ",story:"ನನ್ನ ವ್ಯಾಪಾರದ ಕಥೆ",
  heroEye:"ನಿಮ್ಮ ಅಂಗಡಿ. ನಿಮ್ಮ ಆಯ್ಕೆ.",heroH:"ಇಂದು ಏನು ಮಾರಾಟ ಮಾಡುತ್ತೀರಿ?",heroP:"ಕನ್ನಡದಲ್ಲಿ ಮಾತನಾಡಿ ಅಥವಾ ಬಾಟ್‌ಗೆ ಫೋಟೋ ಕಳುಹಿಸಿ ಸೇರಿಸಿ. ನಿಮ್ಮ ಪುಟ ತಕ್ಷಣ ನವೀಕರಣವಾಗುತ್ತದೆ.",
  brief:"ಇಂದಿನ ಸಾರಾಂಶ",pending:"ತಯಾರಿಸಬೇಕಾದ ಆರ್ಡರ್",received:"ಬಂದ ಹಣ",due:"ಬಾಕಿ ಹಣ",listed:"ಇಂದಿನ ಉತ್ಪನ್ನಗಳು",
@@ -85,7 +85,7 @@ const L={en:{home:"My home",orders:"My orders",products:"My products",money:"My 
  payNote:"\u201cಪಾವತಿ\u201d ಎಂದರೆ ನೀವು ದೃಢಪಡಿಸಿದ್ದೀರಿ. ಬ್ಯಾಂಕ್ ಪರಿಶೀಲನೆ ಅಲ್ಲ.",
  help:"ಸ್ವಲ್ಪ ಸಹಾಯ?",helpP:"ಇಲ್ಲಿ ಎಲ್ಲವನ್ನೂ ಮಾಡಬಹುದು, ಅಥವಾ ಕನ್ನಡದಲ್ಲಿ ಬಾಟ್‌ಗೆ ಸಂದೇಶ ಕಳುಹಿಸಿ.",
  buyer:"ಗ್ರಾಹಕ",item:"ಉತ್ಪನ್ನ",qtyS:"ಪ್ರಮಾಣ",total:"ಒಟ್ಟು",status:"ಸ್ಥಿತಿ",paid:"ಪಾವತಿ",yes:"ಹೌದು",no:"ಇನ್ನೂ ಇಲ್ಲ",
- fNew:"ಹೊಸ",fPrep:"ತಯಾರಿ",fReady:"ಸಿದ್ಧ",fDone:"ಪೂರ್ಣ",madeIn:"ಪ್ರೀತಿಯಿಂದ ತಯಾರಿಸಿದ್ದು,",neighbourhood:"ನಿಮ್ಮ ನೆಚ್ಚಿನ ಸ್ಥಳೀಯ ಉತ್ಪನ್ನಗಳು",namaskara:"ನಮಸ್ಕಾರ",seller:"ಮನೆ ಮಾರಾಟಗಾರರು",farmer:"ರೈತರು"}};
+ fNew:"ಹೊಸ",fPrep:"ತಯಾರಿ",fReady:"ಸಿದ್ಧ",fDone:"ಪೂರ್ಣ",weekly:"ನಿಮ್ಮ ವಾರದ ವಿಮರ್ಶೆ",getReview:"ನನ್ನ ವಾರವನ್ನು ನೋಡಿ",reviewing:"ನಿಮ್ಮ ಇಡೀ ವಾರವನ್ನು ನೋಡುತ್ತಿದೆ…",madeIn:"ಪ್ರೀತಿಯಿಂದ ತಯಾರಿಸಿದ್ದು,",neighbourhood:"ನಿಮ್ಮ ನೆಚ್ಚಿನ ಸ್ಥಳೀಯ ಉತ್ಪನ್ನಗಳು",namaskara:"ನಮಸ್ಕಾರ",seller:"ಮನೆ ಮಾರಾಟಗಾರರು",farmer:"ರೈತರು"}};
 const t=k=>(L[lang]||L.en)[k]||L.en[k];
 
 function toast(msg){const el=document.getElementById("toast");el.textContent=msg;el.classList.add("show");
@@ -247,6 +247,9 @@ const views={
     <div class="passport-grid"><div><strong>${done.length}</strong><span>${esc(t("done"))}</span></div>
     <div><strong>${buyers}</strong><span>${esc(t("buyers"))}</span></div>
     <div><strong>${days}</strong><span>${esc(t("days"))}</span></div></div></section>
+  <section class="panel"><div class="section-head"><h2>${esc(t("weekly"))}</h2><small class="muted" id="reviewBy"></small></div>
+    <p id="review" style="margin:0;white-space:pre-line">${esc(reviewText||"")}</p>
+    ${reviewText?"":`<button class="btn" id="getReview">${esc(t("getReview"))}</button>`}</section>
   <section class="panel"><div class="section-head"><h2>${esc(t("sales"))}</h2></div>${chart()}</section>
   <div class="notice">${esc(t("disc"))}</div>`}};
 
@@ -258,6 +261,14 @@ function wire(){
   document.querySelectorAll("[data-f]").forEach(b=>b.onclick=()=>{filter=b.dataset.f;paint()});
   document.querySelectorAll("[data-tg]").forEach(b=>b.onclick=()=>toast(t("helpP")));
   const p=document.getElementById("print");if(p)p.onclick=()=>window.print();
+  const rb=document.getElementById("reviewBy");if(rb&&reviewModel)rb.textContent=reviewModel;
+  const gr=document.getElementById("getReview");
+  if(gr)gr.onclick=async()=>{
+    gr.disabled=true;document.getElementById("review").textContent=t("reviewing");
+    try{const r=await fetch("/api/review?lang="+lang+"&s="+encodeURIComponent(S));const j=await r.json();
+      if(!r.ok)throw new Error(j.error);
+      reviewText=j.text;reviewModel=j.model==="muse-wonder-1.0"?"Muse Wonder":j.model?"Muse Spark":"";paint()}
+    catch(e){document.getElementById("review").textContent=e.message||"Not available right now.";gr.disabled=false}};
   ["toggleShop","toggleShop2"].forEach(id=>{const el=document.getElementById(id);if(el)el.onclick=toggleShop});
 }
 function renderNav(){
@@ -270,7 +281,7 @@ function renderNav(){
     `<button class="${l===lang?"selected":""}" data-l="${l}">${l==="en"?"English":"ಕನ್ನಡ"}</button>`).join("");
   document.querySelectorAll("[data-l]").forEach(b=>b.onclick=()=>{
     if(b.dataset.l===lang)return;
-    lang=b.dataset.l;localStorage.setItem("mb_lang",lang);briefText="";paint();loadBrief()});
+    lang=b.dataset.l;localStorage.setItem("mb_lang",lang);briefText="";reviewText="";reviewModel="";paint();loadBrief()});
 }
 function paint(){
   const s=data.shop;
