@@ -39,6 +39,14 @@ footer p{max-width:1180px;margin:auto;color:var(--muted);font-size:13px}
 @media(max-width:860px){.market-hero{grid-template-columns:1fr}.hero-art{min-height:170px}.market-hero .inner{margin:auto}}
 @media(max-width:700px){.market-hero .inner{padding:32px 18px}.market-hero h1{font-size:27px}
 .filters{padding:18px 18px 0}.shops{padding:18px 18px 40px;grid-template-columns:1fr}.top-nav{padding:14px 18px}}
+.ask{display:flex;gap:10px;margin-top:22px;max-width:560px}
+.ask input{flex:1;border:0;border-radius:11px;padding:12px 14px;min-height:48px;font:inherit;color:var(--deep)}
+.ask .btn{min-height:48px}
+.ask-out{margin-top:14px;max-width:560px;background:#fff;color:var(--deep);border-radius:14px;padding:16px 18px;font-size:15px;line-height:1.6}
+.ask-out .src{display:flex;flex-wrap:wrap;gap:7px;margin-top:10px}
+.ask-out .src a{background:#f1edf9;color:var(--purple);border-radius:20px;padding:5px 12px;font-size:13px;font-weight:600;text-decoration:none}
+.ask-out .muted{color:var(--muted);font-size:12px;margin-top:8px}
+.shop.hl{outline:3px solid var(--yellow);outline-offset:2px}
 </style></head><body>
 <div class="top-nav"><div class="inner">
   <div class="brand"><span class="brandmark"><svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
@@ -50,6 +58,11 @@ footer p{max-width:1180px;margin:auto;color:var(--muted);font-size:13px}
   <p class="eyebrow" style="color:#e4d8ff;text-transform:uppercase;letter-spacing:1.8px;font-size:12px;font-weight:700">HOME BUSINESSES AND FARMERS OF KARNATAKA</p>
   <h1>Buy straight from the people<br>who make and grow it.</h1>
   <p>Every shop here is run by its owner. They list what they have each day from their own phone, by speaking in Kannada or sending a photo. Tap a shop to order in chat.</p>
+  <form class="ask" id="askForm" autocomplete="off">
+    <input id="askQ" maxlength="300" placeholder="Ask: pickles under ₹200 in Bagalkot?" aria-label="Ask Mane Bazaar">
+    <button class="btn yellow" type="submit">Ask</button>
+  </form>
+  <div class="ask-out" id="askOut" hidden></div>
   </div><div class="hero-art" id="heroArt"><div class="hero-label"><strong id="heroPlace">Made with love, in Karnataka</strong><small>Your neighbourhood favourites</small></div></div>
 </section>
 <div class="filters">
@@ -65,7 +78,7 @@ const esc=s=>String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&
 const label=s=>String(s??"").replace(/_/g," ").replace(/\b\w/g,c=>c.toUpperCase());
 const money=n=>"₹"+Number(n||0).toLocaleString("en-IN");
 const sel=id=>document.getElementById(id);
-let shops=[],botName="",jumpOnce=true;
+let shops=[],botName="",jumpOnce=true,hl=[];
 function fill(id,values){const el=sel(id),keep=el.value;
   [...el.querySelectorAll("option:not(:first-child)")].forEach(o=>o.remove());
   values.filter(Boolean).sort().forEach(v=>{const o=document.createElement("option");o.value=v;o.textContent=label(v);el.append(o)});
@@ -89,6 +102,7 @@ function card(s){
     <div class="go"><a class="btn" href="${esc(app)}">Order in chat</a>
       <p class="web-alt"><a href="${esc(web)}" target="_blank" rel="noopener">or open in the browser</a></p></div></article>`}
 function render(){
+  setTimeout(()=>hl.forEach(t=>document.getElementById("shop-"+t)?.classList.add("hl")),0);
   const f={role:sel("role").value,category:sel("category").value,region:sel("region").value,delivery:sel("delivery").value};
   const list=shops.filter(s=>Object.entries(f).every(([k,v])=>!v||s[k]===v));
   sel("count").textContent=list.length;
@@ -112,4 +126,23 @@ function heroArt(){
   document.getElementById("heroPlace").textContent="Made with love, in "+(reg?reg:"Karnataka");
 }
 load();setInterval(load,5000);
+
+document.getElementById("askForm").addEventListener("submit",async e=>{
+  e.preventDefault();
+  const q=document.getElementById("askQ").value.trim(),out=document.getElementById("askOut");
+  if(!q)return;
+  out.hidden=false;out.textContent="Looking through today's shops…";
+  hl=[];document.querySelectorAll(".shop.hl").forEach(x=>x.classList.remove("hl"));
+  try{
+    const r=await fetch("/api/ask",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({q})});
+    const j=await r.json();
+    if(!r.ok)throw new Error(j.error||"busy");
+    out.innerHTML=`<div>${esc(j.text).replace(/\n/g,"<br>")}</div>`+
+      (j.shops.length?`<div class="src">${j.shops.map(s=>`<a href="#shop-${esc(s.token)}" data-t="${esc(s.token)}">${esc(s.name)}</a>`).join("")}</div>`:"")+
+      `<div class="muted">Answered by Muse Spark from the live listings.</div>`;
+    hl=j.shops.map(s=>s.token);hl.forEach(t=>document.getElementById("shop-"+t)?.classList.add("hl"));
+    out.querySelectorAll("[data-t]").forEach(a=>a.onclick=ev=>{ev.preventDefault();
+      document.getElementById("shop-"+a.dataset.t)?.scrollIntoView({behavior:"smooth",block:"start"})});
+  }catch(err){out.textContent=err.message==="busy"?"The assistant is busy. Please try again.":err.message}
+});
 </script></body></html>

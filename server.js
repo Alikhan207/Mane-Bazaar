@@ -3,7 +3,7 @@ import express from "express";
 import fs from "node:fs";
 import { Bot, InlineKeyboard, InputFile } from "grammy";
 import { db, today, ensureSeller } from "./src/db.js";
-import { handle, brief } from "./src/agent.js";
+import { handle, brief, askMarket } from "./src/agent.js";
 import { transcribe, analyzePhoto, segmentItem, polishPhoto, analyzeVideo } from "./src/meta.js";
 
 const TOKEN = process.env.TELEGRAM_TOKEN;
@@ -195,7 +195,7 @@ app.get("/api/config", (_q, res) => res.json({ bot: BOT_USERNAME }));
 
 // Public marketplace: no chat ids, no phone numbers.
 app.get("/api/shops", (_q, res) => {
-  const items = db.prepare("SELECT chat_id,name,price,unit,photo FROM items WHERE day=?").all(today());
+  const items = db.prepare("SELECT chat_id,name,price,unit,qty,photo FROM items").all();
   const shops = db.prepare(`SELECT chat_id,token,business_name,name,role,category,area,region,delivery,about,photo,open
     FROM sellers WHERE business_name IS NOT NULL ORDER BY created_at DESC`).all();
   res.json(shops.map((s) => ({
@@ -216,7 +216,7 @@ app.get("/api/me", (req, res) => {
     shop: { business_name: s.business_name, name: s.name, role: s.role, category: s.category,
       area: s.area, region: s.region, delivery: s.delivery, about: s.about, photo: s.photo,
       language: s.language, open: !!s.open, token: s.token },
-    items: db.prepare("SELECT id,name,price,unit,qty,photo FROM items WHERE chat_id=? AND day=?").all(s.chat_id, today()),
+    items: db.prepare("SELECT id,name,price,unit,qty,photo FROM items WHERE chat_id=?").all(s.chat_id),
     orders: db.prepare("SELECT id,buyer_name,item_name,qty,total,status,paid,ts FROM orders WHERE seller_chat_id=? ORDER BY id DESC").all(s.chat_id),
   });
 });
@@ -260,6 +260,19 @@ app.post("/api/orders/:id", (req, res) => {
     if (word) notify(o.buyer_chat_id, `Order #${o.id} (${o.qty} x ${o.item_name}) from ${s.business_name || "the shop"} is ${word}.`);
   }
   res.json({ ok: true });
+});
+
+// Website assistant. Public, so it is rate limited to protect the API credits.
+const askHits = new Map();
+app.post("/api/ask", async (req, res) => {
+  const ip = req.ip || "x", now = Date.now();
+  const hits = (askHits.get(ip) || []).filter((t) => now - t < 3600000);
+  if (hits.length >= 20) return res.status(429).json({ error: "Too many questions. Please try again later." });
+  hits.push(now); askHits.set(ip, hits);
+  const q = String(req.body?.q || "").trim();
+  if (!q) return res.status(400).json({ error: "Ask a question." });
+  try { res.json(await askMarket(q)); }
+  catch (e) { console.error("ask:", e.message); res.status(502).json({ error: "The assistant is busy. Please try again." }); }
 });
 
 app.get("/api/brief", async (req, res) => {
