@@ -207,3 +207,23 @@ Say clearly when something depends on her turnover or situation. This is general
   }
   return { text: (text || "").trim(), sources: sources.slice(0, 4) };
 }
+
+
+// Pull the speech out of a video clip and transcribe it, so a seller can film her items
+// and say the prices out loud in the same clip. Returns "" if there is no usable audio.
+export async function transcribeVideoAudio(buf) {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "mba-"));
+  try {
+    const inP = path.join(dir, "in.mp4"), outP = path.join(dir, "out.ogg");
+    await fs.writeFile(inP, buf);
+    await run(ffmpeg, ["-y", "-i", inP, "-vn", "-ac", "1", "-c:a", "libopus", outP]);
+    const audio = await fs.readFile(outP);
+    if (audio.length < 2000) return "";
+    return await transcribe(audio);
+  } catch (e) {
+    console.log("video audio: none", String(e.message).slice(0, 80));
+    return "";
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+}

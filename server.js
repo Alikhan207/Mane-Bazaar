@@ -4,7 +4,7 @@ import fs from "node:fs";
 import { Bot, InlineKeyboard, InputFile } from "grammy";
 import { db, today, ensureSeller } from "./src/db.js";
 import { handle, brief, askMarket } from "./src/agent.js";
-import { transcribe, analyzePhoto, segmentItem, polishPhoto, analyzeVideo } from "./src/meta.js";
+import { transcribe, analyzePhoto, segmentItem, polishPhoto, analyzeVideo, transcribeVideoAudio } from "./src/meta.js";
 
 const TOKEN = process.env.TELEGRAM_TOKEN;
 const bot = new Bot(TOKEN);
@@ -172,8 +172,15 @@ const onVideo = guard(async (id, ctx) => {
     return { text: "That video is too big for me. Please send a short clip, about 15 seconds.", buttons: [] };
   }
   await ctx.reply("Watching your video…");
-  const analysis = await analyzeVideo(await download(ctx));
-  return handle(id, `[video] analysis: ${JSON.stringify(analysis)}`, notify, polishItem);
+  const buf = await download(ctx);
+  // Watch the clip (Muse Spark) and listen to it (Muse Voice Transcribe) at the same time.
+  const [analysis, speech] = await Promise.all([analyzeVideo(buf), transcribeVideoAudio(buf)]);
+  if (speech) {
+    console.log("video speech:", speech.slice(0, 80));
+    await ctx.reply("Heard: " + speech);
+  }
+  return handle(id, `[video] analysis: ${JSON.stringify(analysis)}` +
+    (speech ? `\nWhat she said in the video: ${speech}` : ""), notify, polishItem);
 });
 bot.on("message:video", onVideo);
 bot.on("message:video_note", onVideo);
